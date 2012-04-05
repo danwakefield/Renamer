@@ -1,4 +1,5 @@
-!/usr/bin/env python
+#!/usr/bin/env python
+# ex: set foldmethod=marker
 """ {{{
 NAME
 ==================================================
@@ -183,9 +184,9 @@ OPTS = {
 # Used to seperate parts of a file name instead of spaces
 "CAMALCASE" : True,
 # All Parts of a filename are capitalized 
-"LOGFILE" : os.getcwd() + os.sep + "fixfiles.log",
+"LOGFILE" : None,
 # Location of log file 
-"SUBFILES" : True,
+"SUBFILES" : False,
 # Mimics Naming onto known subtitle files and stores in Subs dir
 "INDEXFILE" : True,
 # Creates an md file in a simple layout for file descriptions 
@@ -245,6 +246,17 @@ OPTS = {
 # 
 #################################}}}##############
 
+### Regexs ###################{{{#################
+REGEXS = [ {  1 : "[sS](?P<S>\d{1,2})[eE](?P<E>\d{1,2})" ,        
+              # S01E01 | s01e01 | S1E1 | s1e1                        
+              2 : "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
+              # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
+              3 : "[ \[]?(?P<S>\d)(?P<E>\d{2})[ \]]?",            
+              # 101  - This is not the most reliable method          
+           }, # Season - Episode regexes index 0
+
+]
+##############################}}}#################
 
 class FileObject: #{{{
     """ Class for representing info about a file
@@ -256,44 +268,64 @@ class FileObject: #{{{
     """
     
     def __init__(self, start_name): #{{{
-        self.start_name = None
-        self.directory = None
-        self.extension = None
+        self.values = { "old_name"      : None,
+                        "start_name"    : start_name,
+                        "directory"     : None,
+                        "extension"     : None,
+                        "show_name"     : None,
+                        "episode"       : None,
+                        "season"        : None,
+                        "quality"       : None,
+                        "episode_name"  : None }
 
-        self.show_name = None
-        self.episode_num = None
-        self.season_num = None
-        self.quality = None
-        self.episode_name = None
-
-        self._split_filename(start_name)
+        self._split_start_name(start_name)
+        self._season_episode_parse()
 
     # __init__ }}}
 
-    def __season_episode(self): # {{{
+    def _split_start_name(self, fname): #{{{
+        d, f = os.path.split(fname)
+        f, e = os.path.splitext(f)
+
+        self.values["directory"] = d
+
+        for i in ["_", ".", "-", ","]:
+            f = f.replace(i, " ")
+
+        self.values["old_name"]  = f
+        self.values["extension"] = e
+
+    # _split_start_name }}}
+
+    def _season_episode_parse(self): #{{{
         """ Performs multiple searchs to determine
             the season and episode numbers. 
         """
-        # S01E01 | s01e01 | S1E1 | s1e1 
-        p1 = re.compile("(?P<S>[sS]\d{1,2})(?P<E>[eE]\d{1,2})")
-        # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1    
-        p2 = re.compile("(?P<S>\d{1,2})[-x](?P<E>\d{1,2})")
-        # 101  - This is not the most reliable method
-        p3 = re.compile("(?P<S>\d)(?P<E>\d{2})")
         
-        matchs = []
-        for p in [p1, p2, p3]:
-            try:
-                matchs.append( p.match(self.old_name).group("S","E") )
-                # Using Named Groups to capture the season
-                # and episode numbers
-            except AttributeError:
-                # This is when a match is not found and the 
-                # call to group is applied to None
-                pass
+        for p in REGEXS[0].itervalues():
+            m = re.search(p, self.values["old_name"])
 
+            # The earlier the match the better the probabilty
+            # of the match being correct therefore we exit
+            # the check after the first match
+            if m != None:
+                self.values["season"] = m.group("S")
+                self.values["episode"] = m.group("E")
+                s = re.split(p, self.values["old_name"])
 
-    # __season_episode }}}
+                if len(s) == 4:
+                    self.values["show_name"] = s[0]
+                    self.values["episode_name"] = s[3]
+                else:
+                    print s
+                    # This should raise an error that can be handled
+                    assert 0, "Filename contains extra Season-Episode identifiers"
+                    
+
+                break
+        
+
+    # _season_episode_parse }}}
 
     def get_filenames(self): #{{{
         """  
@@ -303,46 +335,42 @@ class FileObject: #{{{
             Returns ( old_name, new_name )
         """
 
-        old_name = self.directory + os.sep + self.start_name + self.extension
+        old_name = self.values["directory"] + os.sep +\
+                   self.values["old_name"] + self.values["extension"]
 
-        format_args = { episode      : self.episode_num,
-                        season       : self.season_num,
-                        show_name    : self.show_name,
-                        episode_name : self.episode_name,
-                        quality      : self.quality,
-                        sep          : os.sep }
+        format_args = { "episode"      : self.episode_num,
+                        "season"       : self.season_num,
+                        "show_name"    : self.show_name,
+                        "episode_name" : self.episode_name,
+                        "quality"      : self.quality,
+                        "sep"          : os.sep }
         
-        # TODO
-        # Add support for STRICT option
 
+        if OPTS["STRICT"] and not self._is_strict(format_args):
+            return False
+        
         new_name = OPTS["WRITEFORMAT"].format(**format_args)
         new_name.replace(" ", OPTS["DELIM"])
         new_name += self.extension
 
         return (old_name, new_name)
 
-        # get_filenames }}}
+    # get_filenames }}}
+
+    def _is_strict(self, f_args): #{{{
+        p = re.compile("\{(\w+)\}")
+        o = p.findall(OPTS["WRITEFORMAT"])
+
+        for a in o:
+            if f_args[a] == None:
+                return False
+
+        return True
+                                          
+    # _is_strict }}}
 
 # FileObject }}}
         
-
-class Processor: #{{{
-
-    def __init__(self): # {{{
-
-
-
-    #}}}
-
-
-
-# Processor }}}
-
-
-
-
-
-
 
 def __usage():
     print __doc__
@@ -367,10 +395,10 @@ def main(argv = None): #{{{
                 ]
 
     if argv == None:
-        argv = sys.argv
+        argv = sys.argv[1:]
 
     try:
-        opts, args = getopt.getopt(argv[1:], short_args, long_args)
+        opts, args = getopt.getopt(argv, short_args, long_args)
     except getopt.GetoptError, e:
         __usage()
         print str(e)
@@ -410,9 +438,11 @@ def main(argv = None): #{{{
             OPTS["SPAD"] = arg
         else:
             assert 0, "Unhandled Option - {0}".format(opt)
-        # main }}}
+
+    # main }}}
 
 
 if __name__ == "__main__":
     main()
+
 
