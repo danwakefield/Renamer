@@ -456,6 +456,7 @@ class Processor: # {{{
 
     def __init__(self): # {{{
         self.files = []
+
         if OPTS["SAFERENAME"]:
             self.action = "Copy"
             self._move_func = shutil.copy
@@ -554,8 +555,9 @@ def LOG(message):# {{{
 
 def is_playable(x): #{{{
     # This filters out files that are not media files
-    # Add more formats if you need to rename these as well
-    if x[-3:].lower() in ["mkv","mp4","avi","flv"]:
+    # Add more formats if you need to rename them as well
+    _, ext = os.path.splitext(x)
+    if ext in [".mkv",".mp4",".avi",".flv",".mpg",".mpeg"]:
         return True
     else:
         return False
@@ -636,24 +638,25 @@ def main(argv = None): #{{{
             assert 0, "Unhandled Option - {0}".format(opt)
 
 
-    fl = []
-    for a in args:
-        if is_playable(a):
-            fl.append(FileObject(a))
+    if not args:
+        fl = os.listdir(".")
+    else:
+        fl = args
 
     processor = Processor()
     for f in fl:
-        processor.add_file(f)
+        if is_playable(f):
+            in_f = FileObject(f)
+            processor.add_file(in_f)
 
     if TEST:
-        for f in fl:
+        for f in processor.files:
             i = raw_input(".")
             f._debug_log()
             if i == "q":
                 break
         
     processor.process()
-
     # main }}}
 
 if __name__ == "__main__":
