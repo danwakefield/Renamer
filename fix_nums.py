@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# ex: set foldmethod=marker
+# vim:fdm=marker:
 """ {{{
 NAME
 ==================================================
@@ -7,7 +7,11 @@ NAME
 
 SYNOPSIS
 ==================================================
-    fix_nums [opts]
+    fix_nums [opts] [files]
+
+    Not suppling filenames means the script
+    will use all detectable video files in
+    the current directory.
 
 DESCRIPTION
 ==================================================
@@ -33,20 +37,18 @@ OPTIONS
         The arg "NONE" will turn off logging,
         this can also be set inside the file.
 
-    -i, --indexfile
-        If arg is supplied turns on creation of
-        and index file for the show. If more
-        than one show name is discovered this
-        option does procede. Index file is
-        written out in Markdown format.
-
     -w, --writeformat [format]
         This arg allows you to supply the way
         in which files are renamed. See 
         FORMAT OPTIONS for more detail.
 
+    -p, --purge [word]
+        This adds an item to the purge list
+        any occurences of this will be replaced
+        with nothing. Requires lower case.
+
     -D, --overwrite
-        DANGEROUS OPTION - WARNING
+        *** WARNING - DANGEROUS OPTION ***
         This option allows the program to overwrite
         other files. This can be very dangerous.
 
@@ -54,13 +56,13 @@ OPTIONS
         This option allows you to specify where to 
         place the files after renaming.
 
-    -s, --saferename
+    -r, --saferename
         This option disables renaming and enables
         copying. The original files are left alone
         and copied to the specified location with
         thier new names.
 
-    -S, --strict
+    -s, --strict
         This option enables a strict renaming 
         procedure. Files are not processed if
         WRITEFORMAT contains a field that
@@ -69,14 +71,16 @@ OPTIONS
     --epad [number]
         Allows you to alter the amount of zero 
         padding that affects episodes.
-        I.E. 3 would produce the number 003
-        as the value for {episode}
+        I.E. 3 would produce the number 001
+        as the value for {episode}.
+        Limited to max of 5.
 
     --spad [number]
         Allows you to alter the amount of zero 
         padding that affects seasons.
-        I.E. 3 would produce the number 003
-        as the value for {season}
+        I.E. 4 would produce the number 0001
+        as the value for {season}.
+        Limited to max of 5.
 
     --showname [name]
         Pass a value in to override any value
@@ -177,6 +181,7 @@ import getopt
 import os
 import sys
 import re
+import shutil
 
 #### Options #####################{{{#############
 OPTS = {
@@ -186,77 +191,67 @@ OPTS = {
 # All Parts of a filename are capitalized 
 "LOGFILE" : None,
 # Location of log file 
-"SUBFILES" : False,
-# Mimics Naming onto known subtitle files and stores in Subs dir
-"INDEXFILE" : True,
-# Creates an md file in a simple layout for file descriptions 
 "EPAD" : 2,
-# Required length of episode field after zero padding
+# Minimum length of episode field with zero padding
 "SPAD" : 1,
-# Required length of season field after zero padding
-"WRITEFORMAT" : "{show_name}{sep}{season}{sep}{show_name}S{season}E{episode}{episode_name}",
+# Minimum length of season field with zero padding
+"WRITEFORMAT" : "{show_name}{sep}{season}{sep}{show_name} S{season}E{episode} {episode_name}",
 # Valid writeout field are
-# {quality} | {show_name} | {season} | {episode} | {episode_name}
+# {show_name} | {season} | {episode} | {episode_name}
 # {sep} - this is the os.sep char to allow creation
 # of folders during the rename process
 "OVERWRITE" : False,
 # Allows program to overwrite files during the renaming process
 # Enabling this option is very dangerous and can lead to large
 # losses of data
-"SAFERENAME" : False,
-# Does not rename the files copys to a subdirectory
-# with the modified name instead
+"SAFERENAME" : True,
+# Does not rename the files copys with the modified name instead
 "OUTPUTDIR" : os.getcwd(),
+# The directory to write the files too
+"STRICT" : False,
+# Disallows renaming if any field cannot be determined
+"SHOWNAME" : None,
+# Holder var for Command line passing of a show name
+"SEASON" : None,
+# Holder var for Command line passing of a season
+"DRYRUN" : False,
+# 
+"LOG" : True,
+# 
 }
 ################################}}}###############
 
-### Case Examples ##############{{{###############
-# 
-# Must be able to place 
-# Show Name, Season, Episode, Episode Title, Quality
-# in a user defined way
-#
-# Must match Season and Episode in the formats
-# S01E01 | s01e01 | s01e1 | s1e1 | 1x01 | 1x1 | 101 
-#
-# Matching quality is much simpler as there are only 
-# a few qualitys that are released
-# 320p | 480p | 720p | 1080p
-#
-# Renaming should also strip out useless information
-# such as
-# release names - striped by miXed cASe letters 
-# HDTV
-# WEB-DL
-# XviD
-#
-# Matching Show name will be more difficult as it
-# will be hard to differentiate.
-# Show name is usally the first part of the filename
-# but the is not always the case some release groups
-# place a web-address before the showname
-# 
-# One way of discovering show names will be comparing
-# the guessed names across multiple files
-#
-# Episode name is nearly always the last part of the
-# filename after the Season/Episode identifier
-# it can also follow the show name with a hyphen
-# delimiter
-# 
-#################################}}}##############
+## Items To Strip ############{{{#################
+STRIP = [ "hdtv", "xvid", "-lol", "-fqm", "320p",
+         "480p", "720p", "1080p", "webrip",
+         "web-dl", "x264", "-msd", "-2hd", "-asap",
+         "[dd]", "h.264", "-idm", "h264", "aac2.0",
+]
+# These are just some common terms to strip from
+# filenames.
+# You can specify more at runtime by using the
+# option -p or --purge.
+# This option can be added multiple times on the
+# command line.
+# Items can be added to this list to remain a 
+# permanant purge
+# Ensure that arguements are in lower case
+###############################}}}###############
 
 ### Regexs ###################{{{#################
-REGEXS = [ {  1 : "[sS](?P<S>\d{1,2})[eE](?P<E>\d{1,2})" ,        
-              # S01E01 | s01e01 | S1E1 | s1e1                        
-              2 : "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
-              # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
-              3 : "[ \[]?(?P<S>\d)(?P<E>\d{2})[ \]]?",            
-              # 101  - This is not the most reliable method          
-           }, # Season - Episode regexes index 0
+REGEXS = [
+[   "[Ss](?P<S>\d{1,2})[Ee](?P<E>\d{1,2})" ,        
+    # s01e01 | s1e1                        
+    "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
+    # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
+    "[\W_](?P<S>\d)(?P<E>\d{2})[\W_]",            
+    # 101  - This is not the most reliable method          
+], 
 
 ]
 ##############################}}}#################
+
+
 
 class FileObject: #{{{
     """ Class for representing info about a file
@@ -275,23 +270,90 @@ class FileObject: #{{{
                         "show_name"     : None,
                         "episode"       : None,
                         "season"        : None,
-                        "quality"       : None,
+                        "new_name"      : None,
                         "episode_name"  : None }
 
+        self.success = True
         self._split_start_name(start_name)
-        self._season_episode_parse()
+        self._parse()
 
     # __init__ }}}
+
+    def __is_strict(self, f_args): #{{{
+        p = re.compile("\{(\w+)\}")
+        o = p.findall(OPTS["WRITEFORMAT"])
+
+        for a in o:
+            if f_args[a] == None or f_args[a] == "":
+                return False
+
+        return True
+                                          
+    # __is_strict }}}
+
+    def __strip(self, s): # {{{
+        s = s.lower()
+        for i in STRIP:
+            s = s.replace(i, "")
+        
+        s = s.replace(".", " ")
+        s = s.replace(", ", " ")
+        s = s.replace(",", " ")
+        s = s.replace("_", " ")
+        s = s.replace("'", "")
+        s = s.replace(" - ", " ")
+        s = s.replace("-", " ")
+        s = s.strip()
+
+        return s
+
+    # __strip }}}
+
+    def __capitalize(self, s): # {{{
+        if OPTS["CAMALCASE"]:
+            l = s.split(" ")
+            new_l = []
+            d = OPTS["DELIM"]
+            for word in l:                 
+                word = word.capitalize()
+                new_l.append(word)
+                new_l.append(d)
+
+            new_l.pop()
+            return "".join(new_l)
+        else:
+            return s.replace(" ", OPTS["DELIM"])
+
+    # __capitalize }}}
+
+    def __pad(self, n, o): # {{{
+        s = str(n)
+        if o == "s":
+            while len(s) < OPTS["SPAD"]:
+                s = "0" + s
+        elif o == "e":
+            while len(s) < OPTS["EPAD"]:
+                s = "0" + s
+        else:
+            assert 0, "__Pad received unknown o var"
+
+        return s
+
+    # __pad }}}
+
+    def _parse(self): # {{{
+        self._season_episode_parse()
+        self._show_name_parse()
+        self._episode_name_parse()
+        self._create_new_name()
+
+    # _parse }}}
 
     def _split_start_name(self, fname): #{{{
         d, f = os.path.split(fname)
         f, e = os.path.splitext(f)
 
         self.values["directory"] = d
-
-        for i in ["_", ".", "-", ","]:
-            f = f.replace(i, " ")
-
         self.values["old_name"]  = f
         self.values["extension"] = e
 
@@ -302,91 +364,208 @@ class FileObject: #{{{
             the season and episode numbers. 
         """
         
-        for p in REGEXS[0].itervalues():
+        for p in REGEXS[0]:
             m = re.search(p, self.values["old_name"])
 
             # The earlier the match the better the probabilty
-            # of the match being correct therefore we exit
-            # the check after the first match
+            # of the match being correct hence break on match
             if m != None:
-                self.values["season"] = m.group("S")
-                self.values["episode"] = m.group("E")
+                season = int(m.group("S"))  
+                episode = int(m.group("E"))
+                self.values["season"] = self.__pad(season , "s")
+                self.values["episode"] = self.__pad(episode, "e")
                 s = re.split(p, self.values["old_name"])
 
                 if len(s) == 4:
-                    self.values["show_name"] = s[0]
-                    self.values["episode_name"] = s[3]
+                    self.values["show_name"] = s[0].strip()
+                    self.values["episode_name"] = s[3].strip()
                 else:
                     print s
-                    # This should raise an error that can be handled
+                    # TODO
+                    #
+                    # Should raise an error that allows the filewriter
+                    # to log that this file cannot be renamed.
+                    # This should fail even without opt-strict
                     assert 0, "Filename contains extra Season-Episode identifiers"
                     
-
                 break
         
-
     # _season_episode_parse }}}
 
-    def get_filenames(self): #{{{
-        """  
-            Formats new_name according to
-            OPTS[WRITEFORMAT] 
-            
-            Returns ( old_name, new_name )
-        """
-
-        old_name = self.values["directory"] + os.sep +\
-                   self.values["old_name"] + self.values["extension"]
-
-        format_args = { "episode"      : self.episode_num,
-                        "season"       : self.season_num,
-                        "show_name"    : self.show_name,
-                        "episode_name" : self.episode_name,
-                        "quality"      : self.quality,
-                        "sep"          : os.sep }
+    def _episode_name_parse(self): # {{{
+        if self.values["episode_name"] == "":
+            return 0
         
+        s = self.__strip(self.values["episode_name"])
+        self.values["episode_name"] = self.__capitalize(s)
 
-        if OPTS["STRICT"] and not self._is_strict(format_args):
-            return False
+    # _episode_name_parse }}}
+
+    def _show_name_parse(self): # {{{
+        pass
+        if OPTS["SHOWNAME"] != None:
+            self.values["show_name"] = OPTS["SHOWNAME"]
+            return 0
+
+        s = self.__strip(self.values["show_name"])
         
-        new_name = OPTS["WRITEFORMAT"].format(**format_args)
-        new_name.replace(" ", OPTS["DELIM"])
-        new_name += self.extension
+        self.values["show_name"] = self.__capitalize(s)
 
-        return (old_name, new_name)
+    # _show_name_parse }}}
 
-    # get_filenames }}}
+    def _create_new_name(self): #{{{
+        pass
+        format_args = { "episode"       : self.values["episode"],
+                        "season"        : self.values["season"],
+                        "show_name"     : self.values["show_name"],
+                        "episode_name"  : self.values["episode_name"],
+                        "sep"           : os.sep }
 
-    def _is_strict(self, f_args): #{{{
-        p = re.compile("\{(\w+)\}")
-        o = p.findall(OPTS["WRITEFORMAT"])
+        if OPTS["STRICT"] and not self.__is_strict(format_args):
+            self.success = False
+            return 0
 
-        for a in o:
-            if f_args[a] == None:
-                return False
+        s = OPTS["WRITEFORMAT"].format(**format_args)
+        s = s.strip()
+        s = s.replace(" ", OPTS["DELIM"])
 
-        return True
-                                          
-    # _is_strict }}}
+        self.values["new_name"] = s + self.values["extension"]
+    # _create_new_name }}}
+
+    def get(self):#{{{
+        if self.success == True:
+            return (self.values["start_name"], self.values["new_name"])
+        else:
+            return (self.values["start_name"], False)
+
+    # get }}}
+
+    def _debug_log(self):
+        for k, v in self.values.iteritems():
+            print str(k) + " == " + repr(v)
+
 
 # FileObject }}}
         
+class Processor: # {{{
 
-def __usage():
+    def __init__(self): # {{{
+        self.files = []
+        if OPTS["SAFERENAME"]:
+            self.action = "Copy"
+            self._move_func = shutil.copy
+        else:
+            self.action = "Move"
+            self._move_func = shutil.move
+
+        if OPTS["DRYRUN"]:
+            self._move_func = lambda x = None, y = None: None
+
+        self.log_level = OPTS["LOG"]
+
+    # __init__ }}}
+
+    def LOG(self, message): #{{{
+        if self.log_level:
+            LOG(message)
+
+    # LOG }}}
+
+    def add_file(self, f): #{{{
+        self.files.append(f)
+
+    # add_file }}}
+
+    def process(self): #{{{
+        for f in self.files:
+            self._do_process(f)
+            self.LOG("")
+
+    # process }}}
+
+    def _do_process(self, o): #{{{
+        old, new = o.get()
+
+        if new == False:
+            self.LOG("{0} - Cannot Be renamed".format(old))
+            return 0
+
+        t, h = os.path.split(new)
+
+        path = os.path.join(OPTS["OUTPUTDIR"], t)
+        if not os.path.isdir(path) and not OPTS["DRYRUN"]:
+            os.makedirs(path)
+            self.LOG("Created Directory Structure - {0}".format(path))
+
+        new = os.path.join(path, h)
+
+        if old == new:
+            self.LOG("{0} not changed - Identical Names".format(old))
+            return 0
+
+        if os.path.isfile(new) and not OPTS["OVERWRITE"]:
+            self.LOG("Cannot {0} - {1} - to - {2}\n".format(self.action, old, new) +\
+                    "A file already exists at this path. " +\
+                    "Add -D to force an overwrite")
+            return 0
+
+        self._relocate_file(old, new)
+
+    # _do_process }}}
+
+    def _relocate_file(self, src, dst): #{{{
+         try:
+             self.LOG("Attempting to {0} {1} => {2}".format(self.action, src, dst))
+             self._move_func(src, dst)
+             self.LOG("{0} {1} => {2} | Success".format(self.action, src, dst))
+         except:
+             self.LOG("{0} {1} => {2} | Failed".format(self.action, src, dst))
+             
+    #_relocate_file}}}
+
+# Processor }}}
+
+
+
+def LOG(message):# {{{
+    if OPTS["LOGFILE"] == None:
+        f = sys.stdout
+    else:
+        if type(OPTS["LOGFILE"]) == type(sys.stdout):
+            f = OPTS["LOGFILE"]
+        else:
+            f = open(OPTS["LOGFILE"], "a")
+
+    f.write(message + "\n")
+
+# LOG }}}
+
+def is_playable(x): #{{{
+    # This filters out files that are not media files
+    # Add more formats if you need to rename these as well
+    if x[-3:].lower() in ["mkv","mp4","avi","flv"]:
+        return True
+    else:
+        return False
+#}}}
+
+def __usage(): #{{{
     print __doc__
+#}}}
 
 def main(argv = None): #{{{
-    short_args = "d:cl:siw:o:rhDS"
+    short_args = "d:cl:w:o:rhDStp:xv"
     long_args = ["camelcase",     # c - CAMELCASE   flag
-                 "subfiles",      # s - SUBFILES    flag
-                 "indexfile",     # i - INDEXFILE   flag
                  "overwrite",     # D - OVERWRITE   flag
                  "saferename",    # r - SAFERENAME  flag
-                 "strict",        # S - STRICT      flag
+                 "strict",        # s - STRICT      flag
+                 "dryrun",        # x - DRYRUN      flag
+                 "verbose",       # v - verbose     flag
                  "logfile=",      # l - LOGFILE     arg
                  "writeformat=",  # w - WRITEFORMAT arg
                  "outputdir=",    # o - OUTPUTDIR   arg
                  "delimiter=",    # d - DELIM       arg
+                 "purge=",        # p - STRIP       arg
                  "epad=",         # EPAD            arg
                  "spad=",         # SPAD            arg
                  "season=",       # SEASON          arg
@@ -404,6 +583,7 @@ def main(argv = None): #{{{
         print str(e)
         sys.exit(2)
 
+    TEST = False
     for opt, arg in opts:
         if opt in ["-h", "--help"]:
             __usage()
@@ -414,10 +594,6 @@ def main(argv = None): #{{{
             OPTS["CAMELCASE"] = True
         elif opt in ["-l", "--logfile"]:
             OPTS["LOGFILE"] = arg
-        elif opt in ["-s", "--subfiles"]:
-            OPTS["SUBFILES"] = True
-        elif opt in ["-i", "--indexfile"]:
-            OPTS["INDEXFILE"] = True
         elif opt in ["-w", "--writeformat"]:
             OPTS["WRITEFORMAT"] = arg
         elif opt in ["-D", "--overwrite"]:
@@ -426,21 +602,46 @@ def main(argv = None): #{{{
             OPTS["SAFERENAME"] = True
         elif opt in ["-o", "--outputdir"]:
             OPTS["OUTPUTDIR"] = arg
-        elif opt in ["-S", "--strict"]:
+        elif opt in ["-s", "--strict"]:
             OPTS["STRICT"] = True
+        elif opt in ["-p", "--purge"]:
+            STRIP.append(arg)
+        elif opt in ["-x", "--dryrun"]:
+            OPTS["DRYRUN"] = True
+        elif opt in ["-v", "--verbose"]:
+            OPTS["LOGLEVEL"] = True
         elif opt == "--season":
             OPTS["SEASON"] = arg
         elif opt == "--showname":
             OPTS["SHOWNAME"] = arg
         elif opt == "--epad":
-            OPTS["EPAD"] = arg
+            OPTS["EPAD"] = min(int(arg), 5)
         elif opt == "--spad":
-            OPTS["SPAD"] = arg
+            OPTS["SPAD"] = min(int(arg), 5)
+        elif opt == "-t":
+            TEST = True
         else:
             assert 0, "Unhandled Option - {0}".format(opt)
 
-    # main }}}
 
+    if TEST:
+        fl = []
+        for a in args:
+            if is_playable(a):
+                fl.append(FileObject(a))
+
+        processor = Processor()
+        for f in fl:
+            processor.add_file(f)
+
+        for f in fl:
+            i = raw_input(".")
+            f._debug_log()
+            if i == "q":
+                break
+            
+        processor.process()
+    # main }}}
 
 if __name__ == "__main__":
     main()
