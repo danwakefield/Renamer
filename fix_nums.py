@@ -204,7 +204,7 @@ OPTS = {
 # Allows program to overwrite files during the renaming process
 # Enabling this option is very dangerous and can lead to large
 # losses of data
-"SAFERENAME" : True,
+"SAFERENAME" : False,
 # Does not rename the files copys with the modified name instead
 "OUTPUTDIR" : os.getcwd(),
 # The directory to write the files too
@@ -240,15 +240,20 @@ STRIP = [ "hdtv", "xvid", "-lol", "-fqm", "320p",
 
 ### Regexs ###################{{{#################
 REGEXS = [
-[   "[Ss](?P<S>\d{1,2})[Ee](?P<E>\d{1,2})" ,        
+    "[Ss](?P<S>\d{1,2})[Ee](?P<E>\d{1,2})" ,        
     # s01e01 | s1e1                        
     "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
     # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
     "[\W_](?P<S>\d)(?P<E>\d{2})[\W_]",            
     # 101  - This is not the most reliable method          
-], 
-
 ]
+# This List has been used to reduce unessescary 
+# memory usage of multiple classes containing
+# the info.
+# TODO
+#
+# These would probably be faster as compiled 
+# re patterns
 ##############################}}}#################
 
 
@@ -364,7 +369,7 @@ class FileObject: #{{{
             the season and episode numbers. 
         """
         
-        for p in REGEXS[0]:
+        for p in REGEXS:
             m = re.search(p, self.values["old_name"])
 
             # The earlier the match the better the probabilty
@@ -504,7 +509,7 @@ class Processor: # {{{
             return 0
 
         if os.path.isfile(new) and not OPTS["OVERWRITE"]:
-            self.LOG("Cannot {0} - {1} - to - {2}\n".format(self.action, old, new) +\
+            self.LOG("Cannot {0} - {1} ==> {2}\n".format(self.action, old, new) +\
                     "A file already exists at this path. " +\
                     "Add -D to force an overwrite")
             return 0
@@ -534,9 +539,16 @@ def LOG(message):# {{{
         if type(OPTS["LOGFILE"]) == type(sys.stdout):
             f = OPTS["LOGFILE"]
         else:
-            f = open(OPTS["LOGFILE"], "a")
+            try:
+                f = open(OPTS["LOGFILE"], "a")
+            except:
+                OPTS["LOGFILE"] == None
+                f = sys.stdout
 
     f.write(message + "\n")
+    # This does not close any opened file objects
+    # Using the Logging module would be a better 
+    # solution
 
 # LOG }}}
 
@@ -624,23 +636,24 @@ def main(argv = None): #{{{
             assert 0, "Unhandled Option - {0}".format(opt)
 
 
+    fl = []
+    for a in args:
+        if is_playable(a):
+            fl.append(FileObject(a))
+
+    processor = Processor()
+    for f in fl:
+        processor.add_file(f)
+
     if TEST:
-        fl = []
-        for a in args:
-            if is_playable(a):
-                fl.append(FileObject(a))
-
-        processor = Processor()
-        for f in fl:
-            processor.add_file(f)
-
         for f in fl:
             i = raw_input(".")
             f._debug_log()
             if i == "q":
                 break
-            
-        processor.process()
+        
+    processor.process()
+
     # main }}}
 
 if __name__ == "__main__":
