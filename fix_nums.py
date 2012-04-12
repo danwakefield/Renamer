@@ -240,7 +240,7 @@ STRIP = [ "hdtv", "xvid", "-lol", "-fqm", "320p",
 
 ### Regexs ###################{{{#################
 REGEXS = [
-    "[Ss](?P<S>\d{1,2})[Ee](?P<E>\d{1,2})" ,        
+    "[Ss](?P<S>\d{1,2})[\W_]?[Ee](?P<E>\d{1,2})" ,        
     # s01e01 | s1e1                        
     "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
     # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
@@ -255,7 +255,6 @@ REGEXS = [
 # These would probably be faster as compiled 
 # re patterns
 ##############################}}}#################
-
 
 
 class FileObject: #{{{
@@ -385,34 +384,39 @@ class FileObject: #{{{
                     self.values["show_name"] = s[0].strip()
                     self.values["episode_name"] = s[3].strip()
                 else:
-                    print s
                     # TODO
                     #
                     # Should raise an error that allows the filewriter
                     # to log that this file cannot be renamed.
                     # This should fail even without opt-strict
-                    assert 0, "Filename contains extra Season-Episode identifiers"
+                    self.success = False
                     
-                break
+                return 0
+
+        self.success = False
         
     # _season_episode_parse }}}
 
     def _episode_name_parse(self): # {{{
-        if self.values["episode_name"] == "":
+        en = self.values["episode_name"]
+        if en == "" or en == None:
             return 0
         
-        s = self.__strip(self.values["episode_name"])
+        s = self.__strip(en)
         self.values["episode_name"] = self.__capitalize(s)
 
     # _episode_name_parse }}}
 
     def _show_name_parse(self): # {{{
-        pass
         if OPTS["SHOWNAME"] != None:
             self.values["show_name"] = OPTS["SHOWNAME"]
             return 0
 
-        s = self.__strip(self.values["show_name"])
+        sn = self.values["show_name"]
+        if sn == "" or sn == None:
+            return 0
+
+        s = self.__strip(sn)
         
         self.values["show_name"] = self.__capitalize(s)
 
