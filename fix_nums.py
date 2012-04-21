@@ -27,19 +27,19 @@ OPTIONS
         this option. Default is a period.
 
     -c, --camelcase
-        Camelcase will be turned on with this 
+        Camelcase will be turned on with this
         option. All discovered words will be
         capitalized when renaming the file.
 
     -l, --logfile [file]
-        Supplies the name of the logfile to write 
+        Supplies the name of the logfile to write
         too. Default is "$PWD/fixfiles.log".
         The arg "NONE" will turn off logging,
         this can also be set inside the file.
 
     -w, --writeformat [format]
         This arg allows you to supply the way
-        in which files are renamed. See 
+        in which files are renamed. See
         FORMAT OPTIONS for more detail.
 
     -p, --purge [word]
@@ -53,7 +53,7 @@ OPTIONS
         other files. This can be very dangerous.
 
     -o, --outputdir [directory]
-        This option allows you to specify where to 
+        This option allows you to specify where to
         place the files after renaming.
 
     -r, --saferename
@@ -63,20 +63,20 @@ OPTIONS
         thier new names.
 
     -s, --strict
-        This option enables a strict renaming 
+        This option enables a strict renaming
         procedure. Files are not processed if
         WRITEFORMAT contains a field that
         cannot be determined.
 
     --epad [number]
-        Allows you to alter the amount of zero 
+        Allows you to alter the amount of zero
         padding that affects episodes.
         I.E. 3 would produce the number 001
         as the value for {episode}.
         Limited to max of 5.
 
     --spad [number]
-        Allows you to alter the amount of zero 
+        Allows you to alter the amount of zero
         padding that affects seasons.
         I.E. 4 would produce the number 0001
         as the value for {season}.
@@ -89,9 +89,12 @@ OPTIONS
     --season [number]
         Pass a value in to override any value
         that is discovered for {season}
-        
+
     -h, --help
         Display this help message
+
+    --license
+        Display the licese for this program
 
 
 FORMAT OPTIONS
@@ -133,6 +136,16 @@ FORMAT OPTIONS
     writeformat contains a field that cannot
     be determined.
 
+""" # }}}
+
+
+import getopt
+import os
+import sys
+import re
+import shutil
+
+license = """
 LICENSE
 ==================================================
 Copyright (c) 2012, Daniel Wakefield
@@ -175,13 +188,7 @@ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
-""" # }}}
-
-import getopt
-import os
-import sys
-import re
-import shutil
+"""
 
 #### Options #####################{{{#############
 OPTS = {
@@ -206,7 +213,7 @@ OPTS = {
 # losses of data
 "SAFERENAME" : False,
 # Does not rename the files copys with the modified name instead
-"OUTPUTDIR" : os.getcwd(),
+"OUTPUTDIR" : ".",
 # The directory to write the files too
 "STRICT" : False,
 # Disallows renaming if any field cannot be determined
@@ -244,6 +251,9 @@ REGEXS = [
     # s01e01 | s1e1                        
     "(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})" ,      
     # 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
+    "[Ss]eason[\W_]?(?P<S>\d{1,2})[\W_]?[Ee]pisode[\W_]?(?P<E>\d{1,2})",
+    # Although this is an accurate regex it is not a very common
+    # pattern :. try matching later on
     "[\W_](?P<S>\d)(?P<E>\d{2})[\W_]",            
     # 101  - This is not the most reliable method          
 ]
@@ -423,7 +433,6 @@ class FileObject: #{{{
     # _show_name_parse }}}
 
     def _create_new_name(self): #{{{
-        pass
         format_args = { "episode"       : self.values["episode"],
                         "season"        : self.values["season"],
                         "show_name"     : self.values["show_name"],
@@ -449,9 +458,11 @@ class FileObject: #{{{
 
     # get }}}
 
-    def _debug_log(self):
+    def _debug_log(self): #{{{
         for k, v in self.values.iteritems():
             print str(k) + " == " + repr(v)
+
+    #}}}
 
 
 # FileObject }}}
@@ -567,8 +578,13 @@ def is_playable(x): #{{{
         return False
 #}}}
 
-def __usage(): #{{{
-    print __doc__
+def __usage(x): #{{{
+    if x == 1:
+        print __doc__
+    elif x == 2:
+        print license
+    else:
+        pass
 #}}}
 
 def main(argv = None): #{{{
@@ -589,6 +605,7 @@ def main(argv = None): #{{{
                  "season=",       # SEASON          arg
                  "showname=",     # SHOWNAME        arg
                  "help",
+                 "license",
                 ]
 
     if argv == None:
@@ -604,7 +621,7 @@ def main(argv = None): #{{{
     TEST = False
     for opt, arg in opts:
         if opt in ["-h", "--help"]:
-            __usage()
+            __usage(1)
             sys.exit(1)
         elif opt in ["-d", "--delimiter"]:
             OPTS["DELIM"] = arg
@@ -627,7 +644,7 @@ def main(argv = None): #{{{
         elif opt in ["-x", "--dryrun"]:
             OPTS["DRYRUN"] = True
         elif opt in ["-v", "--verbose"]:
-            OPTS["LOGLEVEL"] = True
+            OPTS["LOG"] = True
         elif opt == "--season":
             OPTS["SEASON"] = arg
         elif opt == "--showname":
@@ -638,6 +655,9 @@ def main(argv = None): #{{{
             OPTS["SPAD"] = min(int(arg), 5)
         elif opt == "-t":
             TEST = True
+        elif opt == "--license":
+            __usage(2)
+            sys.exit(1)
         else:
             assert 0, "Unhandled Option - {0}".format(opt)
 
