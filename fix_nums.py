@@ -141,7 +141,6 @@ FORMAT OPTIONS
 
 """ # }}}
 
-
 import getopt
 import os
 import sys
@@ -217,7 +216,7 @@ OPTS = {
 "SAFERENAME" : False,
 # Does not rename the files copys with the modified name instead
 "OUTPUTDIR" : "/home/admx/video/keep",
-# The directory to write the files too
+# The directory to write the files to
 "STRICT" : False,
 # Disallows renaming if any field cannot be determined
 "SHOWNAME" : None,
@@ -228,19 +227,20 @@ OPTS = {
 # 
 "LOG" : True,
 #
-"MEDIAFORMATS" : [".mkv",".mp4",".avi",".flv",".mpg",".mpeg"],
+"MEDIAFORMATS" : [".mkv",".mp4",".avi",".flv",".mpg",".mpeg",".srt"],
 # Holds the extensions of common media files to include
 }
 ################################}}}###############
 
 ## Items To Strip ############{{{#################
-STRIP = [ "hdtv", "xvid", "-lol", "-fqm", "320p",
+STRIP = [ "hdtv", "xvid", "lol", "fqm", "320p",
 		  "480p", "720p", "1080p", "webrip",
-		  "web-dl", "x264", "-msd", "-2hd", "-asap",
-		  "[dd]", "h.264", "-idm", "h264", "aac2.0",
-		  "-afg", "-evolve", "immerse", "ctrlhd",
+		  "web-dl", "x264", "msd", "2hd", "asap",
+		  "[dd]", "h.264", "idm", "h264", "aac2.0",
+		  "afg", "evolve", "immerse", "ctrlhd",
 		  "pixel", "web", "dl", "fov", "excellence",
-		  "excell", "proper", "killers"
+		  "excell", "proper", "killers", "tla",
+		  "dvdrip"
 ]
 # These are just some common terms to strip from
 # filenames.
@@ -255,32 +255,64 @@ STRIP = [ "hdtv", "xvid", "-lol", "-fqm", "320p",
 
 ### Regexs ###################{{{#################
 REGEXS = [
-	"[Ss](?P<S>\d{1,2})[\W_]?[Ee](?P<E>\d{1,2})" ,        
-	# s01e01 | s1e1                        
-	"\[?(?P<S>\d{1,2})\ ?[-x]\ ?(?P<E>\d{1,2})\]?" ,      
-	# 01x01 | 1x01 | 1x1 | 01x1 | 01-01 | 1-01 | 1-1 | 01-1
-	# [01x01] | [1x01] | etc
-	"[Ss]eason[\W_]?(?P<S>\d{1,2})[\W_]?[Ee]pisode[\W_]?(?P<E>\d{1,2})",
-	# Although this is an accurate regex it is not a very common
-	# pattern :. try matching later on
-	"[\W_](?P<S>\d)(?P<E>\d{2})[\W_]",            
-	# 101  - This is not the most reliable method          
+	re.compile("""	
+	(?P<SN>.*?)			# Named Group (SN) non greedily capturing show name
+	s					# Letter S representing season
+	(?P<S>\d{1,2})		# Named Group (S) capturing 1/2 digits for season no
+	[\W_]?				# Single Optional Non Alpha-Num char
+	e					# Letter E representing Episode
+	(?P<E>\d{1,2})		# Named Group (E) Capturing 1/2 digits for episode no
+	[\W_]*?				# Non greedy optional Non Alpha-Num char
+	(?P<EN>.*)			# Named Group (EN) greedily trying to grab episode name"""
+	,re.IGNORECASE | re.VERBOSE),
+	
+	re.compile("""
+	(?P<SN>.*?)			# NG(SN) non greedily capturing show name
+	(?P<OB>\[?)			# Optional Literal [ - NG(OB) for matching bracket later
+	(?P<S>\d{1,2})		# NG(S) capturing 1/2 digits for season no
+	\ ?					# Optional Space
+	[-x]				# Literal - or x
+	\ ?					# Optional Space
+	(?P<E>\d{1,2})		# NG(E) capturing 1/2 digits for episode no
+	(?(OB)\])			# Matchs literal ] if [ occured earlier
+	(?P<EN>.*)			# NG(EN) greedily trying to grab episode name"""
+	,re.IGNORECASE | re.VERBOSE),
+	
+	re.compile("""
+	(?P<SN>.*?)			# NG(SN) non greedily capturing show name
+	season				# Character literals
+	[\W_]?				# Optional non alphanum char
+	(?P<S>\d{1,2})		# NG(S) capturing 1/2 digits for season no
+	[\W_]?				# Optional non alphanum char
+	episode				# Character literals
+	[\W_]?				# Optional non alphanum char
+	(?P<E>\d{1,2})		# NG(E) capturing 1/2 digits for episode no
+	(?P<EN>.*)			# NG(EN) greedily trying to grab episode name"""
+	,re.IGNORECASE | re.VERBOSE),
+	
+	re.compile("""
+	(?P<SN>.*?)			# NG(SN) non greedily capturing show name
+	[\W_]				# non alphanum char
+	(?P<S>\d)			# NG(S) grab 1 digit for season number
+	(?P<E>\d{2})		# NG(E) grab 2 digits for episode number
+	[\W_]				# non alphanum char
+	(?P<EN>.*)			# NG(EN) greedily trying to grab episode name"""
+	,re.IGNORECASE | re.VERBOSE),
+	
+	re.compile("""
+	ep					# Character Literals
+	(?P<Z>isode)?		# Junk group for optional character literals
+	[\W_]?				# Optional non alphanum char
+	(?P<E>\d{1,2})		# NG(E) capturing 1/2 digits for episode no
+	[\W_]				# non alphanum char
+	(?P<EN>.*)			# NG(EN) greedily trying to grab episode name"""
+	,re.IGNORECASE | re.VERBOSE),
 ]
-# TODO
-#
-# These would probably be faster as compiled 
-# re patterns
+
 ##############################}}}#################
 
-
 class FileObject: #{{{
-	""" Class for representing info about a file
-
-		Functions
-		---------
-		get - returns tuple(start_name, new_name)
-
-	"""
+	""" Class for representing info about a file"""
 	
 	def __init__(self, start_name): #{{{
 		self.values = { "old_name"      : None,
@@ -313,7 +345,7 @@ class FileObject: #{{{
 	def __strip(self, s): # {{{
 		s = s.lower()
 		for i in STRIP:
-			s = s.replace(i, "")
+			s = re.compile("\\b" + i + "\\b").sub("", s)
 		
 		s = s.replace(".", " ")
 		s = s.replace(", ", " ")
@@ -322,6 +354,7 @@ class FileObject: #{{{
 		s = s.replace("'", "")
 		s = s.replace(" - ", " ")
 		s = s.replace("-", " ")
+		
 		s = s.strip()
 
 		return s
@@ -356,8 +389,6 @@ class FileObject: #{{{
 
 	def _parse(self): # {{{
 		self._season_episode_parse()
-		self._show_name_parse()
-		self._episode_name_parse()
 		self._create_new_name()
 
 	# _parse }}}
@@ -374,55 +405,59 @@ class FileObject: #{{{
 
 	def _season_episode_parse(self): #{{{
 		""" Performs multiple searchs to determine
-			the season and episode numbers. 
-		"""
+			the season and episode numbers. """
 		
 		for p in REGEXS:
 			m = re.search(p, self.values["old_name"])
-
-			if m != None:
-				season = int(m.group("S"))  
-				episode = int(m.group("E"))
-				self.values["season"] = self.__pad(season , OPTS["SPAD"])
-				self.values["episode"] = self.__pad(episode, OPTS["EPAD"])
-				s = re.split(p, self.values["old_name"])
-
-				if len(s) == 4:
-					self.values["show_name"] = s[0].strip()
-					self.values["episode_name"] = s[3].strip()
+			
+			if m:
+				season = episode = showname = episodename = None
+				values = m.groupdict()
+				
+				# Sets episode value or fails the rename if this isnt possible
+				if "E" in values:
+					episode = int(values["E"])
 				else:
 					self.success = False
-					
-				return 0
+				
+				# Sets season or fails the rename if it isnt possible
+				if "S" in values:
+					if OPTS["SEASON"]:
+						season = OPTS["SEASON"]
+					else:
+						season = int(values["S"])
+				else:
+					if OPTS["SEASON"]:
+						season = OPTS["SEASON"]
+					else:
+						self.success = False
+				
+				
+				if "SN" in values:
+					if OPTS["SHOWNAME"]:
+						showname = OPTS["SHOWNAME"]
+					else:
+						showname = values["SN"]
+				else:
+					if OPTS["SHOWNAME"]:
+						showname = OPTS["SHOWNAME"]
+					else:
+						self.success = False
+				
+				if "EN" in values:
+					episodename = values["EN"]
+				else:
+					episodename = ""
+				
+				self.values["season"] = self.__pad(season, OPTS["SPAD"])
+				self.values["episode"] = self.__pad(episode, OPTS["EPAD"])
+				self.values["show_name"] = self.__capitalize(self.__strip(showname.strip()))
+				self.values["episode_name"] = self.__capitalize(self.__strip(episodename.strip()))
+				return
 
 		self.success = False
 		
 	# _season_episode_parse }}}
-
-	def _episode_name_parse(self): # {{{
-		en = self.values["episode_name"]
-		if en == "" or en == None:
-			return 0
-		
-		s = self.__strip(en)
-		self.values["episode_name"] = self.__capitalize(s)
-
-	# _episode_name_parse }}}
-
-	def _show_name_parse(self): # {{{
-		if OPTS["SHOWNAME"] != None:
-			self.values["show_name"] = OPTS["SHOWNAME"]
-			return 0
-
-		sn = self.values["show_name"]
-		if sn == "" or sn == None:
-			return 0
-
-		s = self.__strip(sn)
-		
-		self.values["show_name"] = self.__capitalize(s)
-
-	# _show_name_parse }}}
 
 	def _create_new_name(self): #{{{
 		format_args = { "episode"       : self.values["episode"],
@@ -433,11 +468,12 @@ class FileObject: #{{{
 
 		if OPTS["STRICT"] and not self.__is_strict(format_args):
 			self.success = False
-			return 0
+			return
 
 		s = OPTS["WRITEFORMAT"].format(**format_args)
 		s = s.strip()
 		s = s.replace(" ", OPTS["DELIM"])
+		s = re.compile("\.{2,}").sub(".", s)
 
 		self.values["new_name"] = s + self.values["extension"]
 	# _create_new_name }}}
@@ -492,7 +528,6 @@ class Processor: # {{{
 	def process(self): #{{{
 		for f in self.files:
 			self._do_process(f)
-			self.LOG("")
 
 	# process }}}
 
@@ -538,7 +573,6 @@ class Processor: # {{{
 	#_relocate_file}}}
 
 # Processor }}}
-
 
 
 def LOG(message):# {{{
