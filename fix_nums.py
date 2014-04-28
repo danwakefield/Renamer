@@ -146,6 +146,7 @@ import os
 import sys
 import re
 import shutil
+import logging
 
 license = """ {{{
 LICENSE
@@ -240,7 +241,7 @@ STRIP = [ "hdtv", "xvid", "lol", "fqm", "320p",
 		  "afg", "evolve", "immerse", "ctrlhd",
 		  "pixel", "web", "dl", "fov", "excellence",
 		  "excell", "proper", "killers", "tla",
-		  "dvdrip"
+		  "dvdrip", "repack", "ddlvalley.net"
 ]
 # These are just some common terms to strip from
 # filenames.
@@ -309,6 +310,15 @@ REGEXS = [
 	,re.IGNORECASE | re.VERBOSE),
 ]
 
+LOGGER = logging.getLogger()
+LOGGER.setLevel(logging.INFO)
+
+STDOUT_LOGGER = logging.StreamHandler(sys.stdout)
+STDOUT_LOGGER_FORMAT = logging.Formatter("%(message)s")
+STDOUT_LOGGER.setFormatter(STDOUT_LOGGER_FORMAT)
+
+LOGGER.addHandler(STDOUT_LOGGER)
+
 ##############################}}}#################
 
 class FileObject: #{{{
@@ -324,41 +334,44 @@ class FileObject: #{{{
 						"season"        : None,
 						"new_name"      : None,
 						"episode_name"  : None }
-
+		
+		LOGGER.debug("Created fileobject for %s", start_name)
 		self.success = True
 		self._split_start_name(start_name)
 		self._parse()
-
 	# __init__ }}}
 
 	def __is_strict(self, f_args): #{{{
 		p = re.compile("\{(\w+)\}")
 		o = p.findall(OPTS["WRITEFORMAT"])
-
+		
 		for a in o:
 			if f_args[a] == None or f_args[a] == "":
 				return False
-
+		
 		return True
 	# __is_strict }}}
 
 	def __strip(self, s): # {{{
 		s = s.lower()
+		LOGGER.debug("Starting __strip%s", s)
+		s = s.replace("_", " ")
+		
 		for i in STRIP:
 			s = re.compile("\\b" + i + "\\b").sub("", s)
+			LOGGER.debug("Strip : %s - Result : %s", i, s)
 		
 		s = s.replace(".", " ")
 		s = s.replace(", ", " ")
 		s = s.replace(",", " ")
-		s = s.replace("_", " ")
 		s = s.replace("'", "")
 		s = s.replace(" - ", " ")
 		s = s.replace("-", " ")
-		
 		s = s.strip()
+		
+		LOGGER.debug("Finished __strip : %s", s)
 
 		return s
-
 	# __strip }}}
 
 	def __capitalize(self, s): # {{{
@@ -375,7 +388,6 @@ class FileObject: #{{{
 			return "".join(new_l)
 		else:
 			return s.replace(" ", OPTS["DELIM"])
-
 	# __capitalize }}}
 
 	def __pad(self, n, pad_count): # {{{
@@ -384,13 +396,11 @@ class FileObject: #{{{
 			s = "0" + s
 			
 		return s
-
 	# __pad }}}
 
 	def _parse(self): # {{{
 		self._season_episode_parse()
 		self._create_new_name()
-
 	# _parse }}}
 
 	def _split_start_name(self, fname): #{{{
@@ -400,7 +410,6 @@ class FileObject: #{{{
 		self.values["directory"] = d
 		self.values["old_name"]  = f
 		self.values["extension"] = e
-
 	# _split_start_name }}}
 
 	def _season_episode_parse(self): #{{{
@@ -413,6 +422,7 @@ class FileObject: #{{{
 			if m:
 				season = episode = showname = episodename = None
 				values = m.groupdict()
+				LOGGER.debug("Parsed Values : %s", values)
 				
 				# Sets episode value or fails the rename if this isnt possible
 				if "E" in values:
@@ -454,27 +464,30 @@ class FileObject: #{{{
 				self.values["show_name"] = self.__capitalize(self.__strip(showname.strip()))
 				self.values["episode_name"] = self.__capitalize(self.__strip(episodename.strip()))
 				return
-
+		
 		self.success = False
 		
 	# _season_episode_parse }}}
 
 	def _create_new_name(self): #{{{
-		format_args = { "episode"       : self.values["episode"],
-						"season"        : self.values["season"],
-						"show_name"     : self.values["show_name"],
-						"episode_name"  : self.values["episode_name"],
-						"sep"           : os.sep }
-
+		format_args = { "episode"		: self.values["episode"],
+						"season"		: self.values["season"],
+						"show_name"		: self.values["show_name"],
+						"episode_name"	: self.values["episode_name"],
+						"sep"			: os.sep }
+		
 		if OPTS["STRICT"] and not self.__is_strict(format_args):
 			self.success = False
 			return
-
+		
 		s = OPTS["WRITEFORMAT"].format(**format_args)
+		LOGGER.debug("create_new_name : %s", s)
 		s = s.strip()
 		s = s.replace(" ", OPTS["DELIM"])
+		LOGGER.debug("create_new_name : %s", s)
 		s = re.compile("\.{2,}").sub(".", s)
-
+		LOGGER.debug("create_new_name : %s", s)
+		
 		self.values["new_name"] = s + self.values["extension"]
 	# _create_new_name }}}
 
@@ -483,80 +496,60 @@ class FileObject: #{{{
 			return (self.values["start_name"], self.values["new_name"])
 		else:
 			return (self.values["start_name"], False)
-
 	# get }}}
 
-	def _debug_log(self): #{{{
-		for k, v in self.values.iteritems():
-			print str(k) + " == " + repr(v)
-
-	#}}}
-
-
 # FileObject }}}
-		
-class Processor: # {{{
 
+class Processor: # {{{
 	def __init__(self): # {{{
 		self.files = []
-
+		
 		if OPTS["SAFERENAME"]:
 			self.action = "Copy"
 			self._move_func = shutil.copy
 		else:
 			self.action = "Move"
 			self._move_func = shutil.move
-
+		
 		if OPTS["DRYRUN"]:
 			self._move_func = lambda x = None, y = None: None
-
-		self.log_level = OPTS["LOG"]
-
 	# __init__ }}}
-
-	def LOG(self, message): #{{{
-		if self.log_level:
-			LOG(message)
-
-	# LOG }}}
 
 	def add_file(self, f): #{{{
 		self.files.append(f)
-
 	# add_file }}}
 
 	def process(self): #{{{
 		for f in self.files:
 			self._do_process(f)
-
 	# process }}}
 
 	def _do_process(self, o): #{{{
 		old, new = o.get()
-
+		
 		if new == False:
-			self.LOG("{0} - Cannot Be renamed".format(old))
+			LOGGER.info("{0} - Cannot Be renamed".format(old))
 			return 0
-
+		
 		t, h = os.path.split(new)
-
+		
 		path = os.path.join(OPTS["OUTPUTDIR"], t)
 		if not os.path.isdir(path) and not OPTS["DRYRUN"]:
 			os.makedirs(path)
-			self.LOG("Created Directory Structure - {0}".format(path))
-
+			LOGGER.info("Created Directory Structure - {0}".format(path))
+		
 		new = os.path.join(path, h)
-
+		
 		if old == new:
-			self.LOG("{0} not changed - Identical Names".format(old))
+			LOGGER.info("{0} not changed - Identical Names".format(old))
 			return 0
-
+		
 		if os.path.isfile(new) and not OPTS["OVERWRITE"]:
-			self.LOG("Cannot {0} - {1} ==> {2}\n".format(self.action, old, new) +\
+			LOGGER.info("Cannot {0} - {1} ==> {2}\n".format(self.action, old, new) +\
 					"A file already exists at this path. " +\
 					"Add -D to force an overwrite")
 			return 0
-
+		
 		self._relocate_file(old, new)
 		
 		return 1
@@ -565,35 +558,12 @@ class Processor: # {{{
 
 	def _relocate_file(self, src, dst): #{{{
 		 try:
-			 self._move_func(src, dst)
-			 self.LOG("{0} {1} -> {2} | Success".format(self.action, src, dst.replace(OPTS["OUTPUTDIR"] + "/","")))
+			self._move_func(src, dst)
+			LOGGER.info("{0} {1} -> {2} | Success".format(self.action, src, dst.replace(OPTS["OUTPUTDIR"] + "/","")))
 		 except e:
-			 self.LOG("{0} {1} -> {2} | Failed".format(self.action, src, dst))
-			 
+			LOGGER.info("{0} {1} -> {2} | Failed".format(self.action, src, dst)) 
 	#_relocate_file}}}
-
 # Processor }}}
-
-
-def LOG(message):# {{{
-	if OPTS["LOGFILE"] == None:
-		f = sys.stdout
-	else:
-		if type(OPTS["LOGFILE"]) == type(sys.stdout):
-			f = OPTS["LOGFILE"]
-		else:
-			try:
-				f = open(OPTS["LOGFILE"], "a")
-			except:
-				OPTS["LOGFILE"] == None
-				f = sys.stdout
-
-	f.write(message + "\n")
-	if not type(f) == type(sys.stdout):
-		f.close()
-
-
-# LOG }}}
 
 def is_playable(x): #{{{
 	# This filters out files that are not media files
@@ -702,7 +672,7 @@ def main(argv = None): #{{{
 	if TEST:
 		for f in processor.files:
 			i = raw_input(".")
-			f._debug_log()
+			LOGGER.setLevel(logging.DEBUG)
 			if i == "q":
 				break
 		
