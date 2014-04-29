@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # vim:fdm=marker:
-""" {{{
+"""
 NAME
 ==================================================
 	fix_nums
@@ -139,7 +139,7 @@ FORMAT OPTIONS
 	writeformat contains a field that cannot
 	be determined.
 
-""" # }}}
+"""
 
 import getopt
 import os
@@ -148,7 +148,7 @@ import re
 import shutil
 import logging
 
-license = """ {{{
+license = """
 LICENSE
 ==================================================
 Copyright (c) 2012, Daniel Wakefield
@@ -191,9 +191,9 @@ STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE
 OR OTHERWISE) ARISING IN ANY WAY OUT OF THE
 USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 POSSIBILITY OF SUCH DAMAGE.
-""" #}}}
+""" 
 
-#### Options #####################{{{#############
+# Options #############################################
 OPTS = {
 "DELIM" : ".",
 # Used to seperate parts of a file name instead of spaces
@@ -231,9 +231,9 @@ OPTS = {
 "MEDIAFORMATS" : [".mkv",".mp4",".avi",".flv",".mpg",".mpeg",".srt"],
 # Holds the extensions of common media files to include
 }
-################################}}}###############
+###########################################################
 
-## Items To Strip ############{{{#################
+# Items To Strip ##########################################
 STRIP = [ "hdtv", "xvid", "lol", "fqm", "320p",
 		  "480p", "720p", "1080p", "webrip",
 		  "web-dl", "x264", "msd", "2hd", "asap",
@@ -252,9 +252,9 @@ STRIP = [ "hdtv", "xvid", "lol", "fqm", "320p",
 # Items can be added to this list to remain a 
 # permanant purge
 # Arguements are in lower case
-###############################}}}###############
+###############
 
-### Regexs ###################{{{#################
+### Regexs ###################################
 REGEXS = [
 	re.compile("""	
 	(?P<SN>.*?)			# Named Group (SN) non greedily capturing show name
@@ -302,7 +302,7 @@ REGEXS = [
 	
 	re.compile("""
 	ep					# Character Literals
-	(?P<Z>isode)?		# Junk group for optional character literals
+	(?:isode)?			# Junk group for optional character literals
 	[\W_]?				# Optional non alphanum char
 	(?P<E>\d{1,2})		# NG(E) capturing 1/2 digits for episode no
 	[\W_]				# non alphanum char
@@ -319,12 +319,12 @@ STDOUT_LOGGER.setFormatter(STDOUT_LOGGER_FORMAT)
 
 LOGGER.addHandler(STDOUT_LOGGER)
 
-##############################}}}#################
+#################
 
-class FileObject: #{{{
+class FileObject: 
 	""" Class for representing info about a file"""
 	
-	def __init__(self, start_name): #{{{
+	def __init__(self, start_name): 
 		self.values = { "old_name"      : None,
 						"start_name"    : start_name,
 						"directory"     : None,
@@ -339,9 +339,9 @@ class FileObject: #{{{
 		self.success = True
 		self._split_start_name(start_name)
 		self._parse()
-	# __init__ }}}
+	
 
-	def __is_strict(self, f_args): #{{{
+	def __is_strict(self, f_args): 
 		p = re.compile("\{(\w+)\}")
 		o = p.findall(OPTS["WRITEFORMAT"])
 		
@@ -350,16 +350,17 @@ class FileObject: #{{{
 				return False
 		
 		return True
-	# __is_strict }}}
+	
 
-	def __strip(self, s): # {{{
+	def __strip(self, s):
 		s = s.lower()
-		LOGGER.debug("Starting __strip%s", s)
+		LOGGER.debug("Starting __strip : '%s'", s)
 		s = s.replace("_", " ")
 		
 		for i in STRIP:
 			s = re.compile("\\b" + i + "\\b").sub("", s)
-			LOGGER.debug("Strip : %s - Result : %s", i, s)
+		
+		LOGGER.debug("Strip : Result : '%s'", s)
 		
 		s = s.replace(".", " ")
 		s = s.replace(", ", " ")
@@ -369,12 +370,12 @@ class FileObject: #{{{
 		s = s.replace("-", " ")
 		s = s.strip()
 		
-		LOGGER.debug("Finished __strip : %s", s)
+		LOGGER.debug("Finished __strip : '%s'", s)
 
 		return s
-	# __strip }}}
+	
 
-	def __capitalize(self, s): # {{{
+	def __capitalize(self, s):
 		if OPTS["CAMALCASE"]:
 			l = s.split(" ")
 			new_l = []
@@ -388,31 +389,31 @@ class FileObject: #{{{
 			return "".join(new_l)
 		else:
 			return s.replace(" ", OPTS["DELIM"])
-	# __capitalize }}}
+	
 
-	def __pad(self, n, pad_count): # {{{
+	def __pad(self, n, pad_count):
 		s = str(n)
 		while len(s) < pad_count:
 			s = "0" + s
 			
 		return s
-	# __pad }}}
+	
 
-	def _parse(self): # {{{
+	def _parse(self):
 		self._season_episode_parse()
 		self._create_new_name()
-	# _parse }}}
+	
 
-	def _split_start_name(self, fname): #{{{
+	def _split_start_name(self, fname): 
 		d, f = os.path.split(fname)
 		f, e = os.path.splitext(f)
 
 		self.values["directory"] = d
 		self.values["old_name"]  = f
 		self.values["extension"] = e
-	# _split_start_name }}}
+	
 
-	def _season_episode_parse(self): #{{{
+	def _season_episode_parse(self): 
 		""" Performs multiple searchs to determine
 			the season and episode numbers. """
 		
@@ -466,10 +467,9 @@ class FileObject: #{{{
 				return
 		
 		self.success = False
-		
-	# _season_episode_parse }}}
-
-	def _create_new_name(self): #{{{
+	
+	
+	def _create_new_name(self): 
 		format_args = { "episode"		: self.values["episode"],
 						"season"		: self.values["season"],
 						"show_name"		: self.values["show_name"],
@@ -489,19 +489,17 @@ class FileObject: #{{{
 		LOGGER.debug("create_new_name : %s", s)
 		
 		self.values["new_name"] = s + self.values["extension"]
-	# _create_new_name }}}
+	
 
-	def get(self):#{{{
+	def get(self):
 		if self.success == True:
 			return (self.values["start_name"], self.values["new_name"])
 		else:
 			return (self.values["start_name"], False)
-	# get }}}
-
-# FileObject }}}
-
-class Processor: # {{{
-	def __init__(self): # {{{
+	
+	
+class Processor: 
+	def __init__(self):
 		self.files = []
 		
 		if OPTS["SAFERENAME"]:
@@ -513,18 +511,18 @@ class Processor: # {{{
 		
 		if OPTS["DRYRUN"]:
 			self._move_func = lambda x = None, y = None: None
-	# __init__ }}}
+	
 
-	def add_file(self, f): #{{{
+	def add_file(self, f): 
 		self.files.append(f)
-	# add_file }}}
+	
 
-	def process(self): #{{{
+	def process(self): 
 		for f in self.files:
 			self._do_process(f)
-	# process }}}
+	
 
-	def _do_process(self, o): #{{{
+	def _do_process(self, o): 
 		old, new = o.get()
 		
 		if new == False:
@@ -554,36 +552,33 @@ class Processor: # {{{
 		
 		return 1
 
-	# _do_process }}}
 
-	def _relocate_file(self, src, dst): #{{{
+	def _relocate_file(self, src, dst): 
 		 try:
 			self._move_func(src, dst)
 			LOGGER.info("{0} {1} -> {2} | Success".format(self.action, src, dst.replace(OPTS["OUTPUTDIR"] + "/","")))
 		 except e:
 			LOGGER.info("{0} {1} -> {2} | Failed".format(self.action, src, dst)) 
-	#_relocate_file}}}
-# Processor }}}
 
-def is_playable(x): #{{{
+def is_playable(x): 
 	# This filters out files that are not media files
 	_, ext = os.path.splitext(x)
 	if ext in OPTS["MEDIAFORMATS"]:
 		return True
 	else:
 		return False
-#}}}
 
-def __usage(x): #{{{
+
+def __usage(x): 
 	if x == 1:
 		print __doc__
 	elif x == 2:
 		print license
 	else:
 		pass
-#}}}
 
-def main(argv = None): #{{{
+
+def main(argv = None): 
 	short_args = "d:cl:w:o:rhDStp:xv"
 	long_args = ["camelcase",     # c - CAMELCASE   flag
 				 "overwrite",     # D - OVERWRITE   flag
@@ -640,6 +635,7 @@ def main(argv = None): #{{{
 		elif opt in ["-x", "--dryrun"]:
 			OPTS["DRYRUN"] = True
 		elif opt in ["-v", "--verbose"]:
+			LOGGER.setLevel(logging.DEBUG)
 			OPTS["LOG"] = True
 		elif opt == "--season":
 			OPTS["SEASON"] = arg
@@ -677,7 +673,7 @@ def main(argv = None): #{{{
 				break
 		
 	processor.process()
-	# main }}}
+	
 
 if __name__ == "__main__":
 	main()
