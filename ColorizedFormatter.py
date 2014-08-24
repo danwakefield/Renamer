@@ -122,6 +122,10 @@ class ColorizedFormatter:
     be colorized with seperate calls to color with fg and bg, a combo color
     is needed instead.
     
+    TODO: Change to inherited class, no need for it to be seperate.
+    Add in some way to define different message formats depending on 
+        the log level being called to format 
+    
     """
     _attributes = { "%(name)s": "%(name)s",
                     "%(levelno)s": "%(levelno)s",
@@ -150,6 +154,7 @@ class ColorizedFormatter:
                 logging.DEBUG: None,
                 logging.NOTSET: None,
                 }
+    
     
     def __init__(self, formatter=None, color_handler=None, reset=True):
         self.C = color_handler or Color()

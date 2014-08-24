@@ -154,7 +154,7 @@ license = """
 LICENSE
 ==================================================
 Copyright (c) 2012, Daniel Wakefield
-<daniel_wakefield (at) lavabit.com> 
+<dwakefieldmail-git (at) yahoo (dot) com> 
 All rights reserved.
 
 Redistribution and use in source and binary
@@ -271,7 +271,7 @@ REGEXS = [
     
     re.compile("""
     (?P<SN>.*?)         # NG(SN) non greedily capturing show name
-    (?P<OB>\[?)         # Optional Literal [ - NG(OB) for matching bracket later
+    (?P<OB>\[)?         # Optional Literal [ - NG(OB) for matching bracket later
     (?P<S>\d{1,2})      # NG(S) capturing 1/2 digits for season no
     \ ?                 # Optional Space
     [-x]                # Literal - or x
@@ -387,7 +387,6 @@ class FileObject:
         else:
             return s.replace(" ", OPTS["DELIM"])
     
-
     def __pad(self, n, pad_count):
         s = str(n)
         while len(s) < pad_count:
@@ -395,7 +394,6 @@ class FileObject:
             
         return s
     
-
     def _parse(self):
         self._season_episode_parse()
         self._create_new_name()
@@ -412,23 +410,25 @@ class FileObject:
 
     def _season_episode_parse(self): 
         """ Performs multiple searchs to determine
-            the season and episode numbers. """
+            the season and episode numbers. 
+            
+            Uses discovered values or values passed in via options to
+            asgn values to the fileObject"""
         
         for p in REGEXS:
+            LOGGER.debug("Trying to match with regexp: %s", p)
             m = re.search(p, self.values["old_name"])
             
             if m:
                 season = episode = showname = episodename = None
                 values = m.groupdict()
-                LOGGER.debug("Parsed Values : %s", values)
+                LOGGER.debug("Matched - Parsed Values : %s", values)
                 
-                # Sets episode value or fails the rename if this isnt possible
                 if "E" in values:
                     episode = int(values["E"])
                 else:
                     self.success = False
-                
-                # Sets season or fails the rename if it isnt possible
+                    
                 if "S" in values:
                     if OPTS["SEASON"]:
                         season = OPTS["SEASON"]
@@ -481,11 +481,11 @@ class FileObject:
         LOGGER.debug("create_new_name : %s", s)
         s = s.strip()
         s = s.replace(" ", OPTS["DELIM"])
-        LOGGER.debug("create_new_name : %s", s)
         s = re.compile("\.{2,}").sub(".", s)
-        LOGGER.debug("create_new_name : %s", s)
         
-        self.values["new_name"] = s + self.values["extension"]
+        final_name = s + self.values["extension"]
+        LOGGER.debug("create_new_name - finished: %s", final_name)
+        self.values["new_name"] = final_name
     
 
     def get(self):
@@ -524,7 +524,7 @@ class Processor:
         
         if new == False:
             LOGGER.info("{0} - Cannot Be renamed".format(old))
-            return 0
+            return 1
         
         t, h = os.path.split(new)
         
@@ -537,17 +537,17 @@ class Processor:
         
         if old == new:
             LOGGER.info("{0} not changed - Identical Names".format(old))
-            return 0
+            return 1
         
         if os.path.isfile(new) and not OPTS["OVERWRITE"]:
             LOGGER.info("Cannot {0} - {1} ==> {2}\n".format(self.action, old, new) +\
                     "A file already exists at this path. " +\
                     "Add -D to force an overwrite")
-            return 0
+            return 1
         
         self._relocate_file(old, new)
         
-        return 1
+        return 0
 
 
     def _relocate_file(self, src, dst): 
@@ -604,7 +604,7 @@ def main(argv = None):
     except getopt.GetoptError, e:
         __usage()
         print str(e)
-        sys.exit(2)
+        sys.exit(1)
 
     TEST = False
     for opt, arg in opts:
@@ -646,7 +646,7 @@ def main(argv = None):
             TEST = True
         elif opt == "--license":
             __usage(2)
-            sys.exit(1)
+            sys.exit(0)
         else:
             assert 0, "Unhandled Option - {0}".format(opt)
 
